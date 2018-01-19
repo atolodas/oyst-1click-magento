@@ -131,6 +131,11 @@ class Oyst_OneClick_Model_Catalog extends Mage_Core_Model_Abstract
     private $stockItem = null;
 
     /**
+     * @var null
+     */
+    private $configurableProductCustomOptions = null;
+
+    /**
      * Object construct
      *
      * @return null
@@ -212,11 +217,16 @@ class Oyst_OneClick_Model_Catalog extends Mage_Core_Model_Abstract
      *
      * @param int $productId
      * @param int $configurableProductChildId
+     * @param string $configurableProductCustomOptions
      *
      * @return OystProduct
      */
-    public function getOystProduct($productId, $configurableProductChildId = null)
+    public function getOystProduct($productId, $configurableProductChildId = null, $configurableProductCustomOptions = null)
     {
+        if ($data = Zend_Json::decode($configurableProductCustomOptions)) {
+            $this->configurableProductCustomOptions = $data;
+        }
+
         $this->_productId = $productId;
 
         if (!(null === $configurableProductChildId)) {
@@ -507,6 +517,23 @@ class Oyst_OneClick_Model_Catalog extends Mage_Core_Model_Abstract
      */
     protected function _getPrices(Mage_Catalog_Model_Product $product, $storeId = null)
     {
+        $customPrice = 0;
+
+        if ($this->configurableProductCustomOptions) {
+            // @codingStandardsIgnoreLine
+            $customProduct = Mage::getModel('catalog/product')->load($product->getId());
+            foreach ($this->configurableProductCustomOptions as $option) {
+                /** @var Mage_Catalog_Model_Product_Option $customOption */
+                $customOption = $customProduct->getOptionById($option['optionId']);
+
+                if (is_numeric($option['value'])) {
+                    $customOption = $customOption->getValueById($option['value']);
+                }
+
+                $customPrice += $customOption->getPrice(true);
+            }
+        }
+
         $store = Mage::app()->getStore($storeId);
         $priceIncludesTax = Mage::helper('tax')->priceIncludesTax($store);
         $shippingPriceIncludesTax = Mage::helper('tax')->shippingPriceIncludesTax($store);
@@ -587,6 +614,9 @@ class Oyst_OneClick_Model_Catalog extends Mage_Core_Model_Abstract
             $priceIncludingTax = $price + $calculator->calcTaxAmount($price, $taxPercent, false);
             $finalPriceIncludingTax = $finalPrice + $calculator->calcTaxAmount($finalPrice, $taxPercent, false);
         }
+
+        $priceIncludingTax += $customPrice;
+        $finalPriceIncludingTax += $customPrice;
 
         // Get prices
         $data['price-including-tax'] = round($finalPriceIncludingTax, 2);

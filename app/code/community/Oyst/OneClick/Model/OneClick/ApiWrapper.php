@@ -100,7 +100,13 @@ class Oyst_OneClick_Model_OneClick_ApiWrapper extends Oyst_OneClick_Model_Api
 
         /** @var Oyst_OneClick_Model_Catalog $oystCatalog */
         $oystCatalog = Mage::getModel('oyst_oneclick/catalog');
-        $oystProduct = $oystCatalog->getOystProduct($dataFormated['productId'], $dataFormated['configurableProductChildId']);
+
+        $customOptions = null;
+        if (isset($dataFormated['customOptions'])) {
+            $customOptions = $dataFormated['customOptions'];
+        }
+
+        $oystProduct = $oystCatalog->getOystProduct($dataFormated['productId'], $dataFormated['configurableProductChildId'], $customOptions);
 
         /** @var Oyst_OneClick_Helper_Data $oystHelper */
         $oystHelper = Mage::helper('oyst_oneclick');

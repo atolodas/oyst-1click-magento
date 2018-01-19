@@ -45,6 +45,7 @@ function oystOneClick(productId, childId, oneClickUrl, isProductAddtocartFormVal
 
             form.append("configurableProductChildId", configurableProductChildId);
             form.append("preload", opts.preload);
+            form.append("customOptions", JSON.stringify(configurableProductCustomOptions()));
 
             var settings = {
                 async: true,
@@ -173,4 +174,57 @@ function oneClickButtonPickToFirstAddToCartButtons() {
         var oystOneClickButton = document.getElementById("oyst-1click-button-wrapper");
         prependChild(addToCartButtons, oystOneClickButton);
     });
+}
+
+/**
+ * Retrieve custom options value.
+ *
+ * @returns {Array}
+ */
+function configurableProductCustomOptions() {
+    var customOptions = document.getElementsByClassName("product-custom-option"), inputType, name, optionId, value, options = [];
+
+    for (var i = 0; i < customOptions.length; i++) {
+        if (customOptions[i].hasAttribute("name")) {
+            inputType = customOptions[i].getAttribute("type");
+            name = customOptions[i].getAttribute("name");
+            value = customOptions[i].value;
+            optionId = name.replace(/\D/g,'');
+            var customOption = {
+                optionId: optionId,
+                value: value
+            };
+
+            if (("checkbox" === inputType || "radio" === inputType) && customOptions[i].checked && value) {
+                options.push(customOption);
+            } else if ("checkbox" !== inputType && "radio" !== inputType && value) {
+                if (hasClass(customOptions[i], "multiselect")) {
+                    for (var j = 0; j < customOptions[i].length; j++) {
+                        if (customOptions[i].options[j].selected) {
+                            options.push({
+                                optionId: optionId,
+                                value: customOptions[i].options[j].value
+                            });
+                        }
+                    }
+                } else {
+                    options.push(customOption);
+                }
+            }
+        }
+    }
+
+    return options;
+}
+
+/**
+ * Check if html element has specified class.
+ *
+ * @param element
+ * @param cls
+ *
+ * @returns {boolean}
+ */
+function hasClass(element, cls) {
+    return (' ' + element.className + ' ').indexOf(' ' + cls + ' ') > -1;
 }
