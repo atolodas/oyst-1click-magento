@@ -85,6 +85,7 @@ class Oyst_OneClick_Model_OneClick_ApiWrapper extends Oyst_OneClick_Model_Api
             $orderParams->setShouldReinitBuffer($reinitialize);
         }
 
+        $orderParams->setIsMaterialized($this->productsAreMaterialized($oystProducts));
         $context = $this->getContext();
 
         try {
@@ -171,5 +172,29 @@ class Oyst_OneClick_Model_OneClick_ApiWrapper extends Oyst_OneClick_Model_Api
         }
 
         return $context;
+    }
+
+    /**
+     * Check if all products are materialized.
+     *
+     * @param $oystProducts
+     *
+     * @return bool
+     */
+    private function productsAreMaterialized($oystProducts)
+    {
+        $productModel = Mage::getModel('catalog/product');
+        $materialised = true;
+
+        foreach ($oystProducts as $oystProduct) {
+            // @codingStandardsIgnoreLine
+            $product = $productModel->load($oystProduct->reference);
+
+            if (in_array($product->getTypeId(), array(Mage_Catalog_Model_Product_Type::TYPE_VIRTUAL, Mage_Downloadable_Model_Product_Type::TYPE_DOWNLOADABLE))) {
+                $materialised = false;
+            }
+        }
+
+        return $materialised;
     }
 }
