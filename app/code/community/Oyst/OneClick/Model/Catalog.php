@@ -816,24 +816,33 @@ class Oyst_OneClick_Model_Catalog extends Mage_Core_Model_Abstract
                         $price
                     )
                 );
-                $carrierMapping = $this->getConfigMappingDelay($rateCode, $storeId);
+                $tntCode = $rate->getCarrier() . '_' . $rate->getCarrier();
 
                 // This mean it's disable for 1-Click
-                if ("0" === $carrierMapping || is_null($carrierMapping)) {
+                if ("0" === ($carrierMapping = $this->getConfigMappingDelay($rate->getCode())) ||
+                    "0" === ($carrierMapping = $this->getConfigMappingDelay($tntCode))) {
                     continue;
                 }
 
                 $oystPrice = new OystPrice($price, Mage::app()->getStore()->getCurrentCurrencyCode());
 
+                if ($carrierMapping) {
+                    $name = $rate->getMethodTitle();
+                    $delay = $this->getConfigCarrierDelay($tntCode);
+                } else {
+                    $name = trim($this->getConfigMappingName($rate->getCode()));
+                    $delay = $this->getConfigCarrierDelay($rate->getCode());
+                }
+
                 $oystCarrier = new OystCarrier(
                     $rate->getCode(),
-                    trim($mappingName),
+                    $name,
                     $carrierMapping
                 );
 
                 $shipment = new OneClickShipmentCatalogLess(
                     $oystPrice,
-                    $this->getConfigCarrierDelay($rateCode, $storeId),
+                    $delay,
                     $oystCarrier
                 );
 
