@@ -179,6 +179,70 @@ class Oyst_OneClick_Model_Catalog extends Mage_Core_Model_Abstract
         return $response;
     }
 
+    private function getProducts($data)
+    {
+        $childrenIds = $stockFilter = array();
+
+        foreach ($data as $item) {
+            $index = 'productId';
+
+            if (array_key_exists('configurableProductChildId', $item)) {
+                $childrenIds[$item['configurableProductChildId']] = $item['productId'];
+                $index = 'configurableProductChildId';
+            }
+
+            $this->products[$item['productId']]['quantity'] = $stockFilter[$item[$index]] = $item['quantity'];
+        }
+
+        if (!$this->checkItemsQty($stockFilter)) {
+            return null;
+        }
+
+        $products = $this->getProductCollection(array_keys($this->products));
+        $childProducts = $this->getProductCollection(array_keys($childrenIds));
+
+        foreach ($childProducts as $childProduct) {
+            $this->products[$childrenIds[$childProduct->getId()]]['childProduct'] = $childProduct;
+        }
+
+        return $products;
+    }
+
+    /**
+     * Get product collection.
+     *
+     * @param array $data
+     *
+     * @return mixed
+     */
+    private function getProductCollection($data)
+    {
+        $products = Mage::getModel('catalog/product')
+            ->getCollection()
+            ->addFieldToFilter('entity_id', array('in' => $data))
+            ->addFinalPrice()
+            ->addAttributeToSelect('*');
+
+        return $products;
+    }
+
+    private function checkItemsQty($data)
+    {
+        $stockItems = Mage::getModel('cataloginventory/stock_item')
+            ->getCollection()
+            ->addFieldToFilter('product_id', array('in' => array_keys($data)));
+
+        foreach ($stockItems as $stockItem) {
+            $checkQuoteItemQty = $stockItem->checkQuoteItemQty($data[$stockItem->getProductId()], $stockItem->getQty());
+
+            if ($checkQuoteItemQty->getData('has_error')) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /**
      * Return OystProduct array
      *
@@ -190,81 +254,26 @@ class Oyst_OneClick_Model_Catalog extends Mage_Core_Model_Abstract
     {
         $isPreload = filter_var($dataFormated['preload'], FILTER_VALIDATE_BOOLEAN);
 
-        $products = Zend_Json::decode($dataFormated['products']);
-        $productsCount = count($products);
+        $products = $this->getProducts(Zend_Json::decode($dataFormated['products']));
+
         $this->userDefinedAttributeCode = $this->getUserDefinedAttributeCode();
         $this->systemSelectedAttributesCode = $this->getSystemSelectedAttributeCode();
 
-        //$this->productsIds = array_column($products, 'productId');
-        // Alternative way for PHP array_column method which is available only on (PHP 5 >= 5.5.0, PHP 7)
-        $this->productsIds = array_map(function ($element) {
-            return $element['productId'];
-        }, $products);
-
-        $productsError = 0;
-        $checkQuoteItemQty = '';
         $productsFormated = array();
         foreach ($products as $product) {
-            // @codingStandardsIgnoreLine
-            $currentProduct = Mage::getModel('catalog/product')->load($product['productId']);
-
-            if ($isPreload) {
-                $product['quantity'] = 1;
+            if (isset($this->products[$product->getId()]['configurableProductChildId']) &&
+                ($childId = $this->products[$product->getId()]['configurableProductChildId'])) {
+                $this->configurableProductChildId = $childId;
             }
 
-            // Validate Qty
-            if (array_key_exists('configurableProductChildId', $product)) {
-                $this->configurableProductChildId = $product['configurableProductChildId'];
-
-                /** @var Mage_Catalog_Model_Product $configurableProductChild */
-                // @codingStandardsIgnoreLine
-                $configurableProductChild = Mage::getModel('catalog/product')->load($this->configurableProductChildId);
-
-                /** @var Mage_CatalogInventory_Model_Stock_Item $stock */
-                $stock = Mage::getModel('cataloginventory/stock_item')->loadByProduct($configurableProductChild);
-                $checkQuoteItemQty = $stock->checkQuoteItemQty($product['quantity'], $configurableProductChild->getQty());
-            } else {
-                /** @var Mage_CatalogInventory_Model_Stock_Item $stock */
-                $stock = Mage::getModel('cataloginventory/stock_item')->loadByProduct($currentProduct);
-                $checkQuoteItemQty = $stock->checkQuoteItemQty($product['quantity'], $currentProduct->getQty());
-            }
-
-            if ($checkQuoteItemQty->getData('has_error')) {
-                $productsError++;
-            }
-
-            // Manage quantity error
-            if ($productsCount == $productsError) {
-                $message = $checkQuoteItemQty->getData('message');
-                $checkQuoteItemQty->setData(
-                    'message',
-                    str_replace('""', '"' . $currentProduct->getName() . '"', $message)
-                );
-
-                return array(
-                    'has_error' => $checkQuoteItemQty->getData('has_error'),
-                    'message' => $checkQuoteItemQty->getData('message')
-                );
-            }
-
-            if (!$isPreload && 0 === $product['quantity']) {
-                continue;
-            }
-
-            // Make OystProduct
-            $productsFormated[] = $this->format(array($currentProduct), $product['quantity']);
+            $quantity = $this->products[$product->getId()]['quantity'];
+            $productsFormated[] = $this->format(array($product), $quantity);
 
             // Book initial quantity
-            if (!$isPreload && $this->getConfig('should_ask_stock') && 0 !== $product['quantity']) {
-                $realProductId = $currentProduct->getId();
-
-                if (array_key_exists('configurableProductChildId', $product)) {
-                    $realProductId = $this->configurableProductChildId;
-                }
-
-                $this->stockItemToBook($realProductId, $product['quantity']);
+            if (!$isPreload && $this->getConfig('should_ask_stock') && 0 !== $quantity) {
+                $this->stockItemToBook($product->getId(), $quantity);
                 Mage::helper('oyst_oneclick')->log(
-                    sprintf('Book initial qty %s for productId %s', $product['quantity'], $realProductId)
+                    sprintf('Book initial qty %s for productId %s', $quantity, $product->getId())
                 );
             }
 
@@ -301,7 +310,7 @@ class Oyst_OneClick_Model_Catalog extends Mage_Core_Model_Abstract
 
             // Add others attributes
             // Don't get price from child product
-            if (in_array($product->getId(), $this->productsIds)) {
+            if (in_array($product->getId(), array_keys($this->products))) {
                 $this->addAmount($product, $oystProduct);
             }
 
